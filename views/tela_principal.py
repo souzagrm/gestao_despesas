@@ -244,7 +244,7 @@ def mostrar_despesas_por_mes():
 
         def atualizar_meses_disponiveis(event=None):
             ano = ano_selecionado.get()
-            meses_do_ano = consultar_db("SELECT DISTINCT mes FROM transacao WHERE ano = ? AND tipo = 'Despesa", (ano,))
+            meses_do_ano = consultar_db("SELECT DISTINCT mes FROM transacao WHERE ano = ? AND tipo = 'Despesa'", (ano,))
             meses_disponiveis_para_o_ano = [row[0] for row in meses_do_ano]
             dropdown_mes['values'] = meses_disponiveis_para_o_ano
             if meses_disponiveis_para_o_ano:
