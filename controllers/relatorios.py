@@ -3,7 +3,7 @@ from reportlab.pdfgen import canvas
 import sqlite3
 
 def exportar_pdf():
-    c = canvas.Canvas('reports/relatorio_financeiro.pdf', pagesize=letter)
+    c = canvas.Canvas('relatorio_financeiro.pdf', pagesize=letter)
     c.drawString(100, 750, "Relatório Financeiro - Resumo")
 
     conexao = sqlite3.connect('banco/financeiro.db')
@@ -32,16 +32,38 @@ def consultar_despesas_por_ano(ano):
     conexao.close()
     return resultados
 
-# Função para consultar despesas por mês
-def consultar_despesas_por_mes(ano, mes):
+def consultar_despesas_por_mes(ano, mes=None):
     conexao = sqlite3.connect('banco/financeiro.db')
     cursor = conexao.cursor()
-    cursor.execute('''
-        SELECT categoria, valor, data
-        FROM transacao
-        WHERE tipo = 'Despesa' AND ano = ? AND mes = ?
-    ''', (ano, mes))
-    resultados = cursor.fetchall()
+
+    if mes is None:
+        cursor.execute('''
+            SELECT DISTINCT mes
+            FROM transacao
+            WHERE tipo = 'Despesa' AND ano = ?
+        ''', (ano,))
+        meses_disponiveis = [row[0] for row in cursor.fetchall()]
+
+        resultados = []
+        if meses_disponiveis: # Verifica se há meses disponíveis
+          for mes_disponivel in meses_disponiveis:
+              cursor.execute('''
+                  SELECT categoria, valor, data
+                  FROM transacao
+                  WHERE tipo = 'Despesa' AND ano = ? AND mes = ?
+              ''', (ano, mes_disponivel))
+              resultados_mes = cursor.fetchall() #Resultados da consulta do mês em questão
+              if resultados_mes: # Verifica se há resultados para o mês.
+                  resultados.extend(resultados_mes) # Adiciona apenas se houver resultados
+
+    else:  # Se um mês específico for fornecido
+        cursor.execute('''
+            SELECT categoria, valor, data
+            FROM transacao
+            WHERE tipo = 'Despesa' AND ano = ? AND mes = ?
+        ''', (ano, mes))
+        resultados = cursor.fetchall()
+
     conexao.close()
     return resultados
 
