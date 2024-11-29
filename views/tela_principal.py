@@ -9,6 +9,7 @@ import os
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 import sqlite3
+from datetime import datetime
 
 # Variáveis globais para a janela, a Treeview e o Label do total
 janela_tabela = None
@@ -50,11 +51,32 @@ def exibir_tabela(dados):
         tree.insert("", tk.END, values=item)
 
     tree.column("Valor", width=100)
+    
+    def mostrar_menu(event):
+        rowid = tree.identify_row(event.y)
+        if rowid:
+            tree.selection_set(rowid)
+            menu.post(event.x_root, event.y_root)
+
+    def editar_item(coluna):
+        item_selecionado = tree.selection()
+        if item_selecionado:
+            editar_celula(tree, item_selecionado=item_selecionado, coluna_clicada=coluna)
+
+    menu = tk.Menu(janela_tabela, tearoff=0)
+    menu.add_command(label="Editar Categoria", command=lambda: editar_item("#1"))
+    menu.add_command(label="Editar Valor", command=lambda: editar_item("#2"))
+    menu.add_command(label="Editar Data", command=lambda: editar_item("#3"))
+
+    tree.bind("<Button-3>", mostrar_menu)
     tree.bind("<Double-1>", lambda event: editar_celula(tree, event))
 
     botao_exportar = tk.Button(janela_tabela, text="Exportar para Excel",
                                command=lambda: exportar_para_excel(dados, "resultado_consulta.xlsx"))
     botao_exportar.pack(pady=10)
+
+    botao_excluir = tk.Button(janela_tabela, text="Excluir Transação", command=lambda: excluir_transacao(tree))
+    botao_excluir.pack(pady=5) # Adiciona um pequeno espaçamento
 
     total_label = tk.Label(janela_tabela, text=f"Total: R$ {calcular_total(dados):.2f}")
     total_label.pack()
@@ -69,25 +91,45 @@ def calcular_total(dados):
             pass
     return total
 
-def editar_celula(tree, event):
-    region = tree.identify("region", event.x, event.y)
-    if region == "cell":
+def editar_celula(tree, event=None, item_selecionado=None, coluna_clicada=None):
+    if item_selecionado is not None:
+        item = tree.item(item_selecionado[0])
+        rowid = item_selecionado[0]
+        column = coluna_clicada
+    else:
+        region = tree.identify("region", event.x, event.y)
+        if region != "cell":
+            return
+
         column = tree.identify_column(event.x)
         rowid = tree.identify_row(event.y)
         item = tree.item(rowid)
 
-        if column == "#1":  # Coluna "Categoria"
-            valor_antigo = item['values'][0]
-            novo_valor = simpledialog.askstring("Editar Categoria", "Nova Categoria:", initialvalue=valor_antigo)
-            tipo_dado = "categoria"
 
-        elif column == "#2":  # Coluna "Valor"
-            valor_antigo = item['values'][1].replace("R$ ", "")
-            novo_valor = simpledialog.askfloat("Editar Valor", "Novo Valor:", initialvalue=float(valor_antigo))
-            tipo_dado = "valor"
-        else:
-            return
-        
+    if column == "#1":  # Coluna "Categoria"
+        valor_antigo = item['values'][0]
+        novo_valor = simpledialog.askstring("Editar Categoria", "Nova Categoria:", initialvalue=valor_antigo)
+        tipo_dado = "categoria"
+
+    elif column == "#2":  # Coluna "Valor"
+        valor_antigo = item['values'][1]
+        try:
+            valor_antigo_float = float(valor_antigo)
+        except ValueError:
+            valor_antigo_float = 0.0
+
+        novo_valor = simpledialog.askfloat("Editar Valor", "Novo Valor:", initialvalue=valor_antigo_float)
+        tipo_dado = "valor"
+
+    elif column == "#3": # Coluna "Data"
+        valor_antigo = item['values'][2]
+        novo_valor = simpledialog.askstring("Editar Data", "Nova Data (AAAA-MM-DD):", initialvalue=valor_antigo)
+        tipo_dado = "data"
+
+
+    else:
+        return  # Ignora outros tipos de cliques
+
     if novo_valor is not None:
         try:
             if column == "#2":
@@ -95,15 +137,24 @@ def editar_celula(tree, event):
                 novo_valor_float = float(novo_valor)
                 valor_antigo_correto = None
                 tipo_dado = "valor"
+                nova_data = item['values'][2]
+
             elif column == "#1":
                 nova_categoria = novo_valor
-                novo_valor_float = float(item['values'][1]) # Converta para float aqui se necessário
-                valor_antigo_correto = item['values'][0]
+                novo_valor_float = item['values'][1]
+                valor_antigo_correto = item['values'][0] # Usado para atualizar categoria
                 tipo_dado = "categoria"
-            else:
-                return  # Ignora cliques em outras colunas
+                nova_data = item['values'][2]
+            elif column == "#3":
+                datetime.strptime(novo_valor, "%Y-%m-%d")  # Valida formato AAAA-MM-DD
+                nova_categoria = item['values'][0]
+                novo_valor_float = item['values'][1]
+                nova_data = novo_valor
+                valor_antigo_correto = item['values'][2]  # Valor antigo da data
+                tipo_dado = "data"
 
-            nova_data = item['values'][2]
+            else:
+                return  # Ignora outras colunas
 
             atualizar_despesa(nova_categoria, novo_valor_float, nova_data, tipo_dado, valor_antigo_correto)
             tree.item(rowid, values=(nova_categoria, novo_valor_float, nova_data))
@@ -111,11 +162,10 @@ def editar_celula(tree, event):
             dados_atualizados = get_dados_tabela(tree)
             total_label.config(text=f"Total: R$ {calcular_total(dados_atualizados):.2f}")
 
-            #messagebox.showinfo("Sucesso", f"{tipo_dado.capitalize()} atualizado com sucesso!")
-
+        except ValueError:
+             messagebox.showerror("Erro", "Formato de data inválido. Use AAAA-MM-DD.")
         except Exception as e:
             messagebox.showerror("Erro", f"Erro ao atualizar {tipo_dado}: {str(e)}")
-
 def get_dados_tabela(tree):
     dados = []
     for item in tree.get_children():
@@ -125,7 +175,7 @@ def get_dados_tabela(tree):
 def mostrar_despesas_por_ano():
     try:
         # Consulta os anos disponíveis no banco de dados
-        resultado_consulta = consultar_db("SELECT DISTINCT ano FROM transacao")
+        resultado_consulta = consultar_db("SELECT DISTINCT ano FROM transacao WHERE tipo = 'Despesa'")
         anos_disponiveis = sorted(list(set([int(row[0]) for row in resultado_consulta])))
         
         if not anos_disponiveis:
@@ -168,7 +218,7 @@ def mostrar_despesas_por_ano():
 def mostrar_despesas_por_mes():
     try:
         # Consulta os anos disponíveis no banco de dados (apenas os anos)
-        resultado_consulta_anos = consultar_db("SELECT DISTINCT ano FROM transacao")
+        resultado_consulta_anos = consultar_db("SELECT DISTINCT ano FROM transacao WHERE tipo = 'Despesa'")
         anos_disponiveis = sorted(list(set([int(row[0]) for row in resultado_consulta_anos])))
 
         if not anos_disponiveis:
@@ -194,7 +244,7 @@ def mostrar_despesas_por_mes():
 
         def atualizar_meses_disponiveis(event=None):
             ano = ano_selecionado.get()
-            meses_do_ano = consultar_db("SELECT DISTINCT mes FROM transacao WHERE ano = ?", (ano,))
+            meses_do_ano = consultar_db("SELECT DISTINCT mes FROM transacao WHERE ano = ? AND tipo = 'Despesa", (ano,))
             meses_disponiveis_para_o_ano = [row[0] for row in meses_do_ano]
             dropdown_mes['values'] = meses_disponiveis_para_o_ano
             if meses_disponiveis_para_o_ano:
@@ -322,6 +372,35 @@ def gerar_relatorio_pdf():
         
     except Exception as e:
         messagebox.showerror("Erro", f"Erro ao gerar relatório: {e}")
+
+def excluir_transacao(tree):
+    item_selecionado = tree.selection()
+    if item_selecionado:
+        try:
+            categoria, valor, data = tree.item(item_selecionado)['values']
+
+            confirmar = messagebox.askyesno("Confirmar Exclusão", 
+                                            f"Tem certeza que deseja excluir a transação:\nCategoria: {categoria}\nValor: {valor}\nData: {data}?")
+
+            if confirmar:
+                conexao = sqlite3.connect('banco/financeiro.db')
+                cursor = conexao.cursor()
+                try:
+                    cursor.execute("DELETE FROM transacao WHERE categoria = ? AND valor = ? AND data = ?", (categoria, valor, data))
+                    conexao.commit()
+                    tree.delete(item_selecionado)  # Remove a linha da Treeview
+                    dados_atualizados = get_dados_tabela(tree)
+                    total_label.config(text=f"Total: R$ {calcular_total(dados_atualizados):.2f}")
+                    messagebox.showinfo("Sucesso", "Transação excluída com sucesso!")
+                except sqlite3.Error as e:
+                    conexao.rollback()
+                    messagebox.showerror("Erro", f"Erro ao excluir transação: {e}")
+                finally:
+                    conexao.close()
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao excluir transação: {str(e)}")
+    else:
+        messagebox.showwarning("Nenhuma Seleção", "Selecione uma transação para excluir.")
 
 # Função para iniciar a interface
 def iniciar_interface():
